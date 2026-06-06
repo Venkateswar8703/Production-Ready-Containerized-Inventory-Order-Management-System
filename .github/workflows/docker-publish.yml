@@ -34,6 +34,6 @@ jobs:
           context: ./backend
           file: ./backend/Dockerfile
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/stockflow-backend:latest
+          tags: ghcr.io/venkateswar8703/stockflow-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
