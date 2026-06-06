@@ -1,662 +1,293 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Package, 
-  Users, 
-  ShoppingBag, 
-  AlertTriangle, 
-  Plus, 
-  Trash2, 
-  Edit, 
-  Eye, 
-  X, 
-  Menu,
-  Terminal,
-  Activity,
-  Cpu,
-  RefreshCw,
-  Trash
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  Package, Users, ShoppingBag, AlertTriangle, Plus, Trash2, Edit, Eye, X,
+  Terminal, Activity, RefreshCw, Zap, ChevronUp, ChevronDown, Cpu, Trash
 } from 'lucide-react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-function App() {
-  const [currentTab, setCurrentTab] = useState('dashboard');
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  
-  // Data States
+/* ── Animated Count-Up Hook ── */
+function useCountUp(target, duration = 900) {
+  const [val, setVal] = useState(0);
+  useEffect(() => {
+    if (target === 0) { setVal(0); return; }
+    let start = 0;
+    const step = Math.max(1, Math.floor(target / (duration / 16)));
+    const timer = setInterval(() => {
+      start += step;
+      if (start >= target) { setVal(target); clearInterval(timer); }
+      else setVal(start);
+    }, 16);
+    return () => clearInterval(timer);
+  }, [target, duration]);
+  return val;
+}
+
+export default function App() {
+  const [tab, setTab] = useState('dashboard');
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [orders, setOrders] = useState([]);
-  const [dashboardSummary, setDashboardSummary] = useState({
-    total_products: 0,
-    total_customers: 0,
-    total_orders: 0,
-    low_stock_products: 0,
-    low_stock_details: []
-  });
+  const [summary, setSummary] = useState({ total_products: 0, total_customers: 0, total_orders: 0, low_stock_products: 0, low_stock_details: [] });
 
-  // Modal States
-  const [productModalOpen, setProductModalOpen] = useState(false);
-  const [editingProduct, setEditingProduct] = useState(null);
-  const [customerModalOpen, setCustomerModalOpen] = useState(false);
-  const [orderModalOpen, setOrderModalOpen] = useState(false);
-  const [selectedOrder, setSelectedOrder] = useState(null);
-  
-  // Form States
-  const [productForm, setProductForm] = useState({ name: '', sku: '', price: 0, quantity: 0 });
-  const [customerForm, setCustomerForm] = useState({ name: '', email: '', phone: '' });
-  const [orderForm, setOrderForm] = useState({ customer_id: '', items: [{ product_id: '', quantity: 1 }] });
+  const [prodModal, setProdModal] = useState(false);
+  const [editProd, setEditProd] = useState(null);
+  const [custModal, setCustModal] = useState(false);
+  const [ordModal, setOrdModal] = useState(false);
+  const [viewOrder, setViewOrder] = useState(null);
 
-  // Notifications State
+  const [pf, setPf] = useState({ name: '', sku: '', price: 0, quantity: 0 });
+  const [cf, setCf] = useState({ name: '', email: '', phone: '' });
+  const [of, setOf] = useState({ customer_id: '', items: [{ product_id: '', quantity: 1 }] });
+
   const [toasts, setToasts] = useState([]);
-
-  // --- CLI TERMINAL CONSOLE STATES ---
-  const [isTerminalExpanded, setIsTerminalExpanded] = useState(false);
-  const [terminalInput, setTerminalInput] = useState('');
-  const [terminalLogs, setTerminalLogs] = useState([
-    { type: 'system', text: '[SYSTEM] StockFlow Developer Console v1.0.0 initialized.' },
-    { type: 'system', text: 'Type "help" to view available terminal commands.' }
+  const [tele, setTele] = useState([{ id: 1, ts: new Date().toLocaleTimeString(), tag: 'SYS', msg: 'Nexus engine initialized', lat: '0ms' }]);
+  const [cliOpen, setCliOpen] = useState(false);
+  const [cliIn, setCliIn] = useState('');
+  const [cliLog, setCliLog] = useState([
+    { t: 'sys', v: '[NEXUS] StockFlow Developer Shell v2.0' },
+    { t: 'sys', v: 'Type "help" for available commands.' }
   ]);
-  const terminalEndRef = useRef(null);
+  const cliEnd = useRef(null);
 
-  // --- TELEMETRY / AUDIT STATES ---
-  const [telemetryLogs, setTelemetryLogs] = useState([
-    { id: 1, timestamp: new Date().toLocaleTimeString(), tag: 'SYS', message: 'Engine system online', latency: '0.00ms' }
-  ]);
+  const cP = useCountUp(summary.total_products);
+  const cC = useCountUp(summary.total_customers);
+  const cO = useCountUp(summary.total_orders);
+  const cL = useCountUp(summary.low_stock_products);
 
-  // Fetch Data on Load
-  useEffect(() => {
-    fetchAllData();
-  }, []);
+  useEffect(() => { fetchAll(); }, []);
+  useEffect(() => { cliEnd.current?.scrollIntoView({ behavior: 'smooth' }); }, [cliLog]);
 
-  // Scroll terminal to bottom
-  useEffect(() => {
-    if (terminalEndRef.current) {
-      terminalEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [terminalLogs]);
-
-  const showToast = (message, type = 'success') => {
+  const toast = (m, ok = true) => {
     const id = Date.now();
-    setToasts(prev => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
-    }, 5000);
+    setToasts(p => [...p, { id, m, ok }]);
+    setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 5000);
   };
 
-  const addTelemetryLog = (tag, message, latency = '0.00ms') => {
-    const log = {
-      id: Date.now() + Math.random(),
-      timestamp: new Date().toLocaleTimeString(),
-      tag,
-      message,
-      latency
-    };
-    setTelemetryLogs(prev => [log, ...prev].slice(0, 50)); // Keep last 50
+  const addTele = (tag, msg, lat = '0ms') => {
+    setTele(p => [{ id: Date.now() + Math.random(), ts: new Date().toLocaleTimeString(), tag, msg, lat }, ...p].slice(0, 40));
   };
 
-  // Measured API requests wrapping
-  const measuredFetch = async (url, options = {}) => {
-    const start = performance.now();
-    const method = options.method || 'GET';
-    const cleanUrl = url.replace(API_URL, '');
-    
+  const mFetch = async (url, opts = {}) => {
+    const t0 = performance.now();
+    const method = opts.method || 'GET';
     try {
-      const res = await fetch(url, options);
-      const end = performance.now();
-      const latency = `${(end - start).toFixed(2)}ms`;
-      addTelemetryLog(method, `${cleanUrl} -> Status ${res.status}`, latency);
-      return res;
-    } catch (err) {
-      const end = performance.now();
-      const latency = `${(end - start).toFixed(2)}ms`;
-      addTelemetryLog(method, `${cleanUrl} -> CRITICAL EXCEPTION`, latency);
-      throw err;
+      const r = await fetch(url, opts);
+      const lat = `${(performance.now() - t0).toFixed(1)}ms`;
+      addTele(method, `${url.replace(API, '')} → ${r.status}`, lat);
+      return r;
+    } catch (e) {
+      addTele('ERR', `${url.replace(API, '')} → FAIL`, `${(performance.now() - t0).toFixed(1)}ms`);
+      throw e;
     }
   };
 
-  const fetchAllData = async () => {
-    await Promise.all([
-      fetchDashboard(),
-      fetchProducts(),
-      fetchCustomers(),
-      fetchOrders()
-    ]);
-  };
+  const fetchAll = () => Promise.all([
+    mFetch(`${API}/dashboard/summary`).then(r => r.ok ? r.json() : null).then(d => d && setSummary(d)).catch(() => {}),
+    mFetch(`${API}/products`).then(r => r.ok ? r.json() : []).then(setProducts).catch(() => {}),
+    mFetch(`${API}/customers`).then(r => r.ok ? r.json() : []).then(setCustomers).catch(() => {}),
+    mFetch(`${API}/orders`).then(r => r.ok ? r.json() : []).then(setOrders).catch(() => {})
+  ]);
 
-  const fetchDashboard = async () => {
-    try {
-      const res = await measuredFetch(`${API_URL}/dashboard/summary`);
-      if (!res.ok) throw new Error('Failed to fetch dashboard telemetry');
-      const data = await res.json();
-      setDashboardSummary(data);
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  };
-
-  const fetchProducts = async () => {
-    try {
-      const res = await measuredFetch(`${API_URL}/products`);
-      if (!res.ok) throw new Error('Failed to fetch product catalog');
-      const data = await res.json();
-      setProducts(data);
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  };
-
-  const fetchCustomers = async () => {
-    try {
-      const res = await measuredFetch(`${API_URL}/customers`);
-      if (!res.ok) throw new Error('Failed to fetch customer directory');
-      const data = await res.json();
-      setCustomers(data);
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  };
-
-  const fetchOrders = async () => {
-    try {
-      const res = await measuredFetch(`${API_URL}/orders`);
-      if (!res.ok) throw new Error('Failed to fetch transaction logs');
-      const data = await res.json();
-      setOrders(data);
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  };
-
-  // Product CRUD Operations
-  const handleProductSubmit = async (e) => {
+  // ── CRUD handlers ──
+  const submitProduct = async e => {
     e.preventDefault();
-    if (productForm.price < 0 || productForm.quantity < 0) {
-      showToast('Price and quantity must be non-negative', 'error');
-      return;
-    }
     try {
-      let res;
-      if (editingProduct) {
-        res = await measuredFetch(`${API_URL}/products/${editingProduct.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(productForm)
-        });
+      const r = editProd
+        ? await mFetch(`${API}/products/${editProd.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pf) })
+        : await mFetch(`${API}/products`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pf) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || 'Failed');
+      toast(`Product ${editProd ? 'updated' : 'created'}`);
+      setProdModal(false); setEditProd(null); setPf({ name: '', sku: '', price: 0, quantity: 0 }); fetchAll();
+    } catch (e) { toast(e.message, false); }
+  };
+
+  const delProduct = async id => {
+    if (!confirm('Delete this product?')) return;
+    try {
+      const r = await mFetch(`${API}/products/${id}`, { method: 'DELETE' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail); toast('Product deleted'); fetchAll();
+    } catch (e) { toast(e.message, false); }
+  };
+
+  const submitCustomer = async e => {
+    e.preventDefault();
+    try {
+      const r = await mFetch(`${API}/customers`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cf) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || 'Failed');
+      toast('Customer registered'); setCustModal(false); setCf({ name: '', email: '', phone: '' }); fetchAll();
+    } catch (e) { toast(e.message, false); }
+  };
+
+  const delCustomer = async id => {
+    if (!confirm('Delete this customer?')) return;
+    try {
+      const r = await mFetch(`${API}/customers/${id}`, { method: 'DELETE' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail); toast('Customer deleted'); fetchAll();
+    } catch (e) { toast(e.message, false); }
+  };
+
+  const submitOrder = async e => {
+    e.preventDefault();
+    if (!of.customer_id || of.items.some(i => !i.product_id || i.quantity < 1)) { toast('Fill all fields', false); return; }
+    try {
+      const r = await mFetch(`${API}/orders`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customer_id: +of.customer_id, items: of.items.map(i => ({ product_id: +i.product_id, quantity: +i.quantity })) })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || 'Failed');
+      toast('Order committed'); setOrdModal(false); setOf({ customer_id: '', items: [{ product_id: '', quantity: 1 }] }); fetchAll();
+    } catch (e) { toast(e.message, false); }
+  };
+
+  const delOrder = async id => {
+    if (!confirm('Cancel order & restore inventory?')) return;
+    try {
+      const r = await mFetch(`${API}/orders/${id}`, { method: 'DELETE' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail); toast('Order cancelled, stock restored'); fetchAll();
+    } catch (e) { toast(e.message, false); }
+  };
+
+  const liveTotal = of.items.reduce((s, i) => {
+    const p = products.find(x => x.id === +i.product_id);
+    return s + (p ? p.price * (+i.quantity || 0) : 0);
+  }, 0);
+
+  // ── CLI Parser ──
+  const parseCli = (str) => {
+    const a = {}; let m;
+    const re = /--([a-z\-]+)\s+("[^"]*"|[^\s]+)/gi;
+    while ((m = re.exec(str))) a[m[1]] = m[2].replace(/^"|"$/g, '');
+    return a;
+  };
+
+  const runCli = async e => {
+    e.preventDefault();
+    const raw = cliIn.trim(); if (!raw) return;
+    setCliLog(p => [...p, { t: 'in', v: `$ ${raw}` }]);
+    setCliIn('');
+    const cmd = raw.split(/\s+/)[0].toLowerCase();
+    try {
+      if (cmd === 'help') {
+        setCliLog(p => [...p,
+          { t: 'out', v: 'Commands:' },
+          { t: 'out', v: '  products              List catalog' },
+          { t: 'out', v: '  customers             List directory' },
+          { t: 'out', v: '  orders                List transactions' },
+          { t: 'out', v: '  sys-info              Engine diagnostics' },
+          { t: 'out', v: '  add-product --name "X" --sku "Y" --price N --qty N' },
+          { t: 'out', v: '  add-customer --name "X" --email "Y" --phone "Z"' },
+          { t: 'out', v: '  clear                 Clear console' },
+        ]);
+      } else if (cmd === 'clear') { setCliLog([]); }
+      else if (cmd === 'sys-info') {
+        setCliLog(p => [...p,
+          { t: 'out', v: `[ENGINE] Products: ${products.length} | Customers: ${customers.length} | Orders: ${orders.length}` },
+          { t: 'out', v: `[ENGINE] DB: Connected | Uptime: ${Math.floor(performance.now()/1000)}s` }
+        ]);
+      } else if (cmd === 'products') {
+        if (!products.length) setCliLog(p => [...p, { t: 'out', v: 'Empty catalog.' }]);
+        else setCliLog(p => [...p, { t: 'out', v: 'ID  SKU           PRICE     QTY  NAME' },
+          ...products.map(x => ({ t: 'out', v: `${String(x.id).padEnd(4)}${x.sku.padEnd(14)}$${parseFloat(x.price).toFixed(2).padEnd(10)}${String(x.quantity).padEnd(5)}${x.name}` }))]);
+      } else if (cmd === 'customers') {
+        if (!customers.length) setCliLog(p => [...p, { t: 'out', v: 'No customers.' }]);
+        else setCliLog(p => [...p, ...customers.map(c => ({ t: 'out', v: `#${c.id} ${c.name} <${c.email}> ${c.phone}` }))]);
+      } else if (cmd === 'orders') {
+        if (!orders.length) setCliLog(p => [...p, { t: 'out', v: 'No orders.' }]);
+        else setCliLog(p => [...p, ...orders.map(o => ({ t: 'out', v: `#${o.id} $${parseFloat(o.total_amount).toFixed(2)} (${o.items?.length} items) ${new Date(o.created_at).toLocaleDateString()}` }))]);
+      } else if (cmd === 'add-product') {
+        const a = parseCli(raw);
+        if (!a.name || !a.sku || !a.price || !a.qty) throw new Error('Usage: add-product --name "X" --sku "Y" --price N --qty N');
+        const r = await mFetch(`${API}/products`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: a.name, sku: a.sku, price: +a.price, quantity: +a.qty }) });
+        const d = await r.json(); if (!r.ok) throw new Error(d.detail);
+        setCliLog(p => [...p, { t: 'out', v: `[OK] Created "${d.name}" SKU:${d.sku}` }]); fetchAll();
+      } else if (cmd === 'add-customer') {
+        const a = parseCli(raw);
+        if (!a.name || !a.email || !a.phone) throw new Error('Usage: add-customer --name "X" --email "Y" --phone "Z"');
+        const r = await mFetch(`${API}/customers`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: a.name, email: a.email, phone: a.phone }) });
+        const d = await r.json(); if (!r.ok) throw new Error(d.detail);
+        setCliLog(p => [...p, { t: 'out', v: `[OK] Registered #${d.id} ${d.name}` }]); fetchAll();
       } else {
-        res = await measuredFetch(`${API_URL}/products`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(productForm)
-        });
+        setCliLog(p => [...p, { t: 'err', v: `Unknown: "${cmd}". Type "help".` }]);
       }
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Transaction failed');
-
-      showToast(`Product ${editingProduct ? 'updated' : 'inserted'}!`);
-      setProductModalOpen(false);
-      setEditingProduct(null);
-      setProductForm({ name: '', sku: '', price: 0, quantity: 0 });
-      fetchAllData();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
+    } catch (err) { setCliLog(p => [...p, { t: 'err', v: `Error: ${err.message}` }]); }
   };
 
-  const handleEditProduct = (product) => {
-    setEditingProduct(product);
-    setProductForm({
-      name: product.name,
-      sku: product.sku,
-      price: product.price,
-      quantity: product.quantity
-    });
-    setProductModalOpen(true);
-  };
-
-  const handleDeleteProduct = async (id) => {
-    if (!window.confirm('Erase this product record?')) return;
-    try {
-      const res = await measuredFetch(`${API_URL}/products/${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Deletion failed');
-      
-      showToast('Record erased');
-      fetchAllData();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  };
-
-  // Customer CRUD Operations
-  const handleCustomerSubmit = async (e) => {
-    e.preventDefault();
-    const emailRegex = /^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$/;
-    if (!emailRegex.test(customerForm.email)) {
-      showToast('Invalid email formatting', 'error');
-      return;
-    }
-    try {
-      const res = await measuredFetch(`${API_URL}/customers`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(customerForm)
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Customer registration failed');
-
-      showToast('Customer registered!');
-      setCustomerModalOpen(false);
-      setCustomerForm({ name: '', email: '', phone: '' });
-      fetchAllData();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  };
-
-  const handleDeleteCustomer = async (id) => {
-    if (!window.confirm('Delete customer account?')) return;
-    try {
-      const res = await measuredFetch(`${API_URL}/customers/${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Deletion failed');
-
-      showToast('Customer deleted');
-      fetchAllData();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  };
-
-  // Order Operations
-  const handleAddOrderItem = () => {
-    setOrderForm(prev => ({
-      ...prev,
-      items: [...prev.items, { product_id: '', quantity: 1 }]
-    }));
-  };
-
-  const handleRemoveOrderItem = (index) => {
-    if (orderForm.items.length === 1) return;
-    setOrderForm(prev => ({
-      ...prev,
-      items: prev.items.filter((_, i) => i !== index)
-    }));
-  };
-
-  const handleOrderItemChange = (index, field, value) => {
-    const newItems = [...orderForm.items];
-    newItems[index][field] = value;
-    setOrderForm(prev => ({ ...prev, items: newItems }));
-  };
-
-  const handleOrderSubmit = async (e) => {
-    e.preventDefault();
-    if (!orderForm.customer_id) {
-      showToast('No customer selected', 'error');
-      return;
-    }
-    const invalid = orderForm.items.some(item => !item.product_id || item.quantity <= 0);
-    if (invalid) {
-      showToast('Check items selection/quantity', 'error');
-      return;
-    }
-
-    try {
-      const payload = {
-        customer_id: parseInt(orderForm.customer_id),
-        items: orderForm.items.map(item => ({
-          product_id: parseInt(item.product_id),
-          quantity: parseInt(item.quantity)
-        }))
-      };
-
-      const res = await measuredFetch(`${API_URL}/orders`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Checkout transaction aborted');
-
-      showToast('Checkout transaction committed!');
-      setOrderModalOpen(false);
-      setOrderForm({ customer_id: '', items: [{ product_id: '', quantity: 1 }] });
-      fetchAllData();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  };
-
-  const handleDeleteOrder = async (id) => {
-    if (!window.confirm('Rollback transaction? Ordered stock will be returned to inventory.')) return;
-    try {
-      const res = await measuredFetch(`${API_URL}/orders/${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Rollback failed');
-
-      showToast('Transaction cancelled & inventory restored');
-      fetchAllData();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  };
-
-  // Live total helper
-  const getLiveOrderTotal = () => {
-    return orderForm.items.reduce((sum, item) => {
-      const prod = products.find(p => p.id === parseInt(item.product_id));
-      if (!prod) return sum;
-      return sum + (prod.price * (parseInt(item.quantity) || 0));
-    }, 0);
-  };
-
-  // --- TERMINAL COMMAND INTERPRETER ENGINE ---
-  const parseCLIArgs = (cmdStr) => {
-    const args = {};
-    const regex = /--([a-zA-Z0-9\-]+)\s+("[^"]*"|[^\s]+)/g;
-    let match;
-    while ((match = regex.exec(cmdStr)) !== null) {
-      let val = match[2];
-      if (val.startsWith('"') && val.endsWith('"')) {
-        val = val.slice(1, -1);
-      }
-      args[match[1]] = val;
-    }
-    return args;
-  };
-
-  const handleTerminalSubmit = async (e) => {
-    e.preventDefault();
-    const input = terminalInput.trim();
-    if (!input) return;
-
-    setTerminalLogs(prev => [...prev, { type: 'input', text: `> ${input}` }]);
-    setTerminalInput('');
-
-    const tokens = input.split(/\s+/);
-    const command = tokens[0].toLowerCase();
-
-    try {
-      if (command === 'help') {
-        setTerminalLogs(prev => [
-          ...prev,
-          { type: 'output', text: 'Available Command-line Interfaces:' },
-          { type: 'output', text: '  clear                         - Clear CLI outputs' },
-          { type: 'output', text: '  products                      - View catalog lists' },
-          { type: 'output', text: '  customers                     - List directory names' },
-          { type: 'output', text: '  orders                        - View active transactions' },
-          { type: 'output', text: '  sys-info                      - Print CPU/DB connection stats' },
-          { type: 'output', text: '  add-product --name "X" --sku "Y" --price 10 --qty 50' },
-          { type: 'output', text: '  add-customer --name "X" --email "Y" --phone "Z"' }
-        ]);
-      } 
-      else if (command === 'clear') {
-        setTerminalLogs([]);
-      } 
-      else if (command === 'sys-info') {
-        setTerminalLogs(prev => [
-          ...prev,
-          { type: 'output', text: `[STATUS] Engine Telemetry Core Online` },
-          { type: 'output', text: `[STATUS] Database: PostgreSQL 15 - Connected` },
-          { type: 'output', text: `[STATUS] Total Products: ${products.length}` },
-          { type: 'output', text: `[STATUS] Total Customers: ${customers.length}` },
-          { type: 'output', text: `[STATUS] Total Orders: ${orders.length}` },
-          { type: 'output', text: `[STATUS] Active sessions: 1 (Developer console)` }
-        ]);
-      } 
-      else if (command === 'products') {
-        const res = await fetch(`${API_URL}/products`);
-        const data = await res.json();
-        if (data.length === 0) {
-          setTerminalLogs(prev => [...prev, { type: 'output', text: 'Catalog is empty.' }]);
-        } else {
-          setTerminalLogs(prev => [
-            ...prev,
-            { type: 'output', text: 'ID\tSKU\t\tPRICE\tQTY\tNAME' },
-            ...data.map(p => ({ type: 'output', text: `${p.id}\t${p.sku.padEnd(12)}\t$${parseFloat(p.price).toFixed(2)}\t${p.quantity}\t${p.name}` }))
-          ]);
-        }
-      } 
-      else if (command === 'customers') {
-        const res = await fetch(`${API_URL}/customers`);
-        const data = await res.json();
-        if (data.length === 0) {
-          setTerminalLogs(prev => [...prev, { type: 'output', text: 'No registered customers.' }]);
-        } else {
-          setTerminalLogs(prev => [
-            ...prev,
-            { type: 'output', text: 'ID\tEMAIL\t\t\tNAME' },
-            ...data.map(c => ({ type: 'output', text: `${c.id}\t${c.email.padEnd(20)}\t${c.name}` }))
-          ]);
-        }
-      } 
-      else if (command === 'orders') {
-        const res = await fetch(`${API_URL}/orders`);
-        const data = await res.json();
-        if (data.length === 0) {
-          setTerminalLogs(prev => [...prev, { type: 'output', text: 'No order ledger logs.' }]);
-        } else {
-          setTerminalLogs(prev => [
-            ...prev,
-            { type: 'output', text: 'ID\tTOTAL\tITEMS\tDATE' },
-            ...data.map(o => ({ type: 'output', text: `${o.id}\t$${parseFloat(o.total_amount).toFixed(2)}\t${o.items?.length}\t${new Date(o.created_at).toLocaleDateString()}` }))
-          ]);
-        }
-      } 
-      else if (command === 'add-product') {
-        const args = parseCLIArgs(input);
-        if (!args.name || !args.sku || !args.price || !args.qty) {
-          throw new Error('Missing arguments! Format: add-product --name "Product Name" --sku "SKU-CODE" --price 19.99 --qty 100');
-        }
-        
-        const price = parseFloat(args.price);
-        const quantity = parseInt(args.qty);
-        if (isNaN(price) || price < 0 || isNaN(quantity) || quantity < 0) {
-          throw new Error('Price and quantity must be non-negative numbers.');
-        }
-
-        const res = await measuredFetch(`${API_URL}/products`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: args.name, sku: args.sku, price, quantity })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'API insertion rejected');
-
-        setTerminalLogs(prev => [...prev, { type: 'output', text: `[SUCCESS] Product '${data.name}' created with SKU ${data.sku}` }]);
-        fetchAllData();
-      } 
-      else if (command === 'add-customer') {
-        const args = parseCLIArgs(input);
-        if (!args.name || !args.email || !args.phone) {
-          throw new Error('Missing arguments! Format: add-customer --name "Alice" --email "alice@email.com" --phone "123"');
-        }
-
-        const res = await measuredFetch(`${API_URL}/customers`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: args.name, email: args.email, phone: args.phone })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'API insertion rejected');
-
-        setTerminalLogs(prev => [...prev, { type: 'output', text: `[SUCCESS] Customer registered with ID #${data.id}` }]);
-        fetchAllData();
-      } 
-      else {
-        setTerminalLogs(prev => [...prev, { type: 'error', text: `CLI: Command not recognized: "${command}". Type "help" for instructions.` }]);
-      }
-    } catch (err) {
-      setTerminalLogs(prev => [...prev, { type: 'error', text: `CLI ERROR: ${err.message}` }]);
-    }
-  };
+  const stockPct = q => Math.min(100, (q / 100) * 100);
+  const stockClass = q => q < 5 ? 'critical' : q < 15 ? 'low' : 'healthy';
 
   return (
-    <div className="app-container">
-      {/* Visual CRT Scanline filter */}
-      <div className="scanlines"></div>
-      
-      {/* Glow backgrounds */}
-      <div className="bg-glow"></div>
-      <div className="bg-glow-2"></div>
+    <div className="nexus-app">
+      {/* Ambient visuals */}
+      <div className="dot-field" />
+      <div className="orb orb-1" /><div className="orb orb-2" /><div className="orb orb-3" />
 
-      {/* Mobile Top Header */}
-      <header className="mobile-header">
-        <div className="brand" style={{ marginBottom: 0 }}>
-          <span>📦</span>
-          <span>StockFlow<span className="brand-dot">_</span></span>
-        </div>
-        <button className="btn-close" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
-          <Menu size={20} />
-        </button>
+      {/* ── TOP NAV ── */}
+      <header className="top-bar">
+        <div className="brand-glitch" data-text="STOCKFLOW//NEXUS">STOCKFLOW//NEXUS</div>
+        <ul className="nav-tabs">
+          {[['dashboard', Activity, 'Overview'], ['products', Package, 'Products'], ['customers', Users, 'Customers'], ['orders', ShoppingBag, 'Orders']].map(([k, Icon, label]) => (
+            <li key={k} className={`nav-tab ${tab === k ? 'active' : ''}`}>
+              <button onClick={() => setTab(k)}><Icon size={14} /><span className="tab-label">{label}</span></button>
+            </li>
+          ))}
+        </ul>
+        <div className="live-indicator"><div className="pulse-ring" /><span>LIVE</span></div>
       </header>
 
-      {/* Sidebar Command Console Navigation */}
-      <aside className={`sidebar ${mobileMenuOpen ? 'mobile-open' : ''}`}>
-        <div className="brand">
-          <span>📦</span>
-          <span>StockFlow<span className="brand-dot">_</span></span>
-        </div>
-        <nav>
-          <ul className="nav-links">
-            <li className={`nav-item ${currentTab === 'dashboard' ? 'active' : ''}`}>
-              <button onClick={() => { setCurrentTab('dashboard'); setMobileMenuOpen(false); }}>
-                <Activity size={16} />
-                Overview Summary
-              </button>
-            </li>
-            <li className={`nav-item ${currentTab === 'products' ? 'active' : ''}`}>
-              <button onClick={() => { setCurrentTab('products'); setMobileMenuOpen(false); }}>
-                <Package size={16} />
-                Product Catalog
-              </button>
-            </li>
-            <li className={`nav-item ${currentTab === 'customers' ? 'active' : ''}`}>
-              <button onClick={() => { setCurrentTab('customers'); setMobileMenuOpen(false); }}>
-                <Users size={16} />
-                Customer Directory
-              </button>
-            </li>
-            <li className={`nav-item ${currentTab === 'orders' ? 'active' : ''}`}>
-              <button onClick={() => { setCurrentTab('orders'); setMobileMenuOpen(false); }}>
-                <ShoppingBag size={16} />
-                Orders Ledger
-              </button>
-            </li>
-          </ul>
-        </nav>
+      {/* ── MAIN CONTENT ── */}
+      <main className="nexus-content">
 
-        {/* Diagnostic Mini panel */}
-        <div style={{ marginTop: '2rem', padding: '0.75rem', border: '1px solid var(--border-color)', borderRadius: '4px', background: 'rgba(0,0,0,0.2)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--color-cyan)' }}>
-            <Cpu size={12} />
-            <span>CORE STATUS: OK</span>
-          </div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-            <span>DB CONNECTED | SSL</span>
-          </div>
-        </div>
-
-        <div className="sidebar-footer">
-          <p>ENGINE V1.0.0</p>
-          <p>© 2026 ANTIGRAVITY</p>
-        </div>
-      </aside>
-
-      {/* Main View Port */}
-      <main className="main-content">
-        
-        {currentTab === 'dashboard' && (
-          <div>
-            <div className="page-header">
-              <div className="page-title">
-                <h1>System Overview Dashboard</h1>
-                <p>Command telemetry and database synchronization monitoring.</p>
-              </div>
+        {tab === 'dashboard' && (
+          <div className="page-enter" key="dash">
+            <div className="sec-header">
+              <div><h1>System Overview</h1><p>Real-time inventory telemetry & transaction monitoring</p></div>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button className="btn btn-secondary" onClick={fetchAllData}>
-                  <RefreshCw size={12} /> Sync
-                </button>
-                <button className="btn btn-primary" onClick={() => setOrderModalOpen(true)}>
-                  <Plus size={12} /> Create Order
-                </button>
+                <button className="nx-btn nx-btn-ghost" onClick={fetchAll}><RefreshCw size={12} />Sync</button>
+                <button className="nx-btn nx-btn-primary" onClick={() => setOrdModal(true)}><Zap size={12} />New Order</button>
               </div>
             </div>
 
-            {/* Metrics cards grid */}
-            <div className="metrics-grid">
-              <div className="glass-card metric-card metric-products">
-                <div className="metric-info">
-                  <h3>Total Products</h3>
-                  <div className="value">{dashboardSummary.total_products}</div>
-                </div>
-                <div className="metric-icon">
-                  <Package size={20} />
+            {/* Low stock marquee */}
+            {summary.low_stock_details.length > 0 && (
+              <div className="alert-ticker">
+                <div className="ticker-track">
+                  {[...summary.low_stock_details, ...summary.low_stock_details].map((p, i) => (
+                    <span key={i} className="ticker-item"><AlertTriangle size={11} />{p.name} ({p.sku}) — {p.quantity} left</span>
+                  ))}
                 </div>
               </div>
-              <div className="glass-card metric-card metric-customers">
-                <div className="metric-info">
-                  <h3>Customers</h3>
-                  <div className="value">{dashboardSummary.total_customers}</div>
-                </div>
-                <div className="metric-icon">
-                  <Users size={20} />
-                </div>
-              </div>
-              <div className="glass-card metric-card metric-orders">
-                <div className="metric-info">
-                  <h3>Orders Placed</h3>
-                  <div className="value">{dashboardSummary.total_orders}</div>
-                </div>
-                <div className="metric-icon">
-                  <ShoppingBag size={20} />
-                </div>
-              </div>
-              <div className="glass-card metric-card metric-lowstock">
-                <div className="metric-info">
-                  <h3>Low Stock Alert</h3>
-                  <div className="value">{dashboardSummary.low_stock_products}</div>
-                </div>
-                <div className="metric-icon">
-                  <AlertTriangle size={20} />
-                </div>
-              </div>
+            )}
+
+            {/* Metric cards */}
+            <div className="metric-row">
+              <div className="m-card mc-1"><div className="m-card-label">Total Products</div><div className="m-card-val">{cP}</div><div className="m-card-icon"><Package /></div></div>
+              <div className="m-card mc-2"><div className="m-card-label">Customers</div><div className="m-card-val">{cC}</div><div className="m-card-icon"><Users /></div></div>
+              <div className="m-card mc-3"><div className="m-card-label">Orders</div><div className="m-card-val">{cO}</div><div className="m-card-icon"><ShoppingBag /></div></div>
+              <div className="m-card mc-4"><div className="m-card-label">Low Stock</div><div className="m-card-val">{cL}</div><div className="m-card-icon"><AlertTriangle /></div></div>
             </div>
 
-            {/* Live Audit Log and Recent orders dashboard details */}
-            <div className="dashboard-details">
-              <div className="glass-card" style={{ display: 'flex', flexDirection: 'column' }}>
-                <div className="section-header" style={{ marginBottom: '1rem' }}>
-                  <h2>Recent Database Transactions</h2>
-                </div>
-                {orders.length === 0 ? (
-                  <div className="empty-state">No active orders registered in DB ledger.</div>
-                ) : (
-                  <div className="table-container">
-                    <table className="table-glass">
-                      <thead>
-                        <tr>
-                          <th>Txn ID</th>
-                          <th>Customer</th>
-                          <th>Total Amount</th>
-                          <th>Timestamp</th>
-                          <th className="text-right">Ledger</th>
-                        </tr>
-                      </thead>
+            <div className="dash-grid">
+              <div className="glass-panel">
+                <div className="panel-title">Recent Transactions</div>
+                {orders.length === 0 ? <div className="empty-well">No transactions yet</div> : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table className="nx-table">
+                      <thead><tr><th>ID</th><th>Client</th><th>Amount</th><th>Date</th><th style={{ textAlign: 'right' }}>Action</th></tr></thead>
                       <tbody>
                         {orders.slice(0, 5).map(o => (
                           <tr key={o.id}>
-                            <td className="mono-cell">#{o.id}</td>
+                            <td className="mono cyan">#{o.id}</td>
                             <td>{o.customer?.name}</td>
-                            <td className="mono-cell">${parseFloat(o.total_amount).toFixed(2)}</td>
+                            <td className="mono">${parseFloat(o.total_amount).toFixed(2)}</td>
                             <td>{new Date(o.created_at).toLocaleDateString()}</td>
-                            <td className="text-right">
-                              <button className="btn btn-secondary btn-sm" onClick={() => setSelectedOrder(o)}>
-                                <Eye size={12} /> View
-                              </button>
-                            </td>
+                            <td style={{ textAlign: 'right' }}><button className="nx-btn nx-btn-ghost nx-btn-sm" onClick={() => setViewOrder(o)}><Eye size={12} /></button></td>
                           </tr>
                         ))}
                       </tbody>
@@ -664,18 +295,15 @@ function App() {
                   </div>
                 )}
               </div>
-
-              <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <div className="section-header">
-                  <h2>System Telemetry Feed</h2>
-                </div>
-                <div className="telemetry-feed">
-                  {telemetryLogs.map(log => (
-                    <div key={log.id} className="telemetry-row">
-                      <span className="telemetry-time">[{log.timestamp}]</span>
-                      <span className="telemetry-tag">[{log.tag}]</span>
-                      <span className="telemetry-msg">{log.message}</span>
-                      <span className="telemetry-latency">{log.latency}</span>
+              <div className="glass-panel">
+                <div className="panel-title">System Telemetry</div>
+                <div className="tele-feed">
+                  {tele.map(l => (
+                    <div key={l.id} className="tele-row">
+                      <span className="tele-ts">[{l.ts}]</span>
+                      <span className="tele-tag">[{l.tag}]</span>
+                      <span className="tele-msg">{l.msg}</span>
+                      <span className="tele-lat">{l.lat}</span>
                     </div>
                   ))}
                 </div>
@@ -684,59 +312,35 @@ function App() {
           </div>
         )}
 
-        {currentTab === 'products' && (
-          <div>
-            <div className="page-header">
-              <div className="page-title">
-                <h1>Product Catalog Database</h1>
-                <p>Register catalog details, monitor prices, and inventory stock indices.</p>
-              </div>
-              <button className="btn btn-primary" onClick={() => {
-                setEditingProduct(null);
-                setProductForm({ name: '', sku: '', price: 0, quantity: 0 });
-                setProductModalOpen(true);
-              }}>
-                <Plus size={12} /> Add Product record
-              </button>
+        {tab === 'products' && (
+          <div className="page-enter" key="prod">
+            <div className="sec-header">
+              <div><h1>Product Catalog</h1><p>Manage inventory records, pricing, and stock levels</p></div>
+              <button className="nx-btn nx-btn-primary" onClick={() => { setEditProd(null); setPf({ name: '', sku: '', price: 0, quantity: 0 }); setProdModal(true); }}><Plus size={12} />Add Product</button>
             </div>
-
-            <div className="glass-card">
-              {products.length === 0 ? (
-                <div className="empty-state">
-                  <Package size={36} />
-                  <p>Product database empty.</p>
-                </div>
-              ) : (
-                <div className="table-container">
-                  <table className="table-glass">
-                    <thead>
-                      <tr>
-                        <th>Product Name</th>
-                        <th>Unique SKU</th>
-                        <th>Standard Price</th>
-                        <th>Stock Level</th>
-                        <th className="text-right">Operations</th>
-                      </tr>
-                    </thead>
+            <div className="glass-panel">
+              {products.length === 0 ? <div className="empty-well"><Package size={40} /><p>Catalog empty</p></div> : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="nx-table">
+                    <thead><tr><th>Name</th><th>SKU</th><th>Price</th><th>Stock</th><th style={{ textAlign: 'right' }}>Actions</th></tr></thead>
                     <tbody>
                       {products.map(p => (
                         <tr key={p.id}>
-                          <td style={{ fontWeight: '600' }}>{p.name}</td>
-                          <td className="mono-cell">{p.sku}</td>
-                          <td className="mono-cell">${parseFloat(p.price).toFixed(2)}</td>
-                          <td>
-                            <span className={`badge ${p.quantity < 10 ? 'badge-danger' : 'badge-success'}`}>
-                              {p.quantity} units
-                            </span>
+                          <td style={{ fontWeight: 600 }}>{p.name}</td>
+                          <td><span className="tag tag-info">{p.sku}</span></td>
+                          <td className="mono">${parseFloat(p.price).toFixed(2)}</td>
+                          <td style={{ minWidth: 140 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <span className={`tag ${p.quantity < 5 ? 'tag-bad' : p.quantity < 15 ? 'tag-warn' : 'tag-ok'}`}>{p.quantity}</span>
+                              <div className="stock-bar-wrap" style={{ flex: 1 }}>
+                                <div className="stock-bar-track"><div className={`stock-bar-fill ${stockClass(p.quantity)}`} style={{ width: `${stockPct(p.quantity)}%` }} /></div>
+                              </div>
+                            </div>
                           </td>
-                          <td className="text-right">
-                            <div style={{ display: 'inline-flex', gap: '0.5rem' }}>
-                              <button className="btn btn-secondary btn-sm" onClick={() => handleEditProduct(p)}>
-                                <Edit size={12} />
-                              </button>
-                              <button className="btn btn-danger-outline btn-sm" onClick={() => handleDeleteProduct(p.id)}>
-                                <Trash2 size={12} />
-                              </button>
+                          <td style={{ textAlign: 'right' }}>
+                            <div style={{ display: 'inline-flex', gap: '0.35rem' }}>
+                              <button className="nx-btn nx-btn-ghost nx-btn-sm" onClick={() => { setEditProd(p); setPf({ name: p.name, sku: p.sku, price: p.price, quantity: p.quantity }); setProdModal(true); }}><Edit size={12} /></button>
+                              <button className="nx-btn nx-btn-danger nx-btn-sm" onClick={() => delProduct(p.id)}><Trash2 size={12} /></button>
                             </div>
                           </td>
                         </tr>
@@ -749,48 +353,25 @@ function App() {
           </div>
         )}
 
-        {currentTab === 'customers' && (
-          <div>
-            <div className="page-header">
-              <div className="page-title">
-                <h1>Customer Identity Directory</h1>
-                <p>Record, audit, and monitor customer credentials.</p>
-              </div>
-              <button className="btn btn-primary" onClick={() => setCustomerModalOpen(true)}>
-                <Plus size={12} /> Register Customer
-              </button>
+        {tab === 'customers' && (
+          <div className="page-enter" key="cust">
+            <div className="sec-header">
+              <div><h1>Customer Directory</h1><p>Client identity registry and contact records</p></div>
+              <button className="nx-btn nx-btn-primary" onClick={() => setCustModal(true)}><Plus size={12} />Register</button>
             </div>
-
-            <div className="glass-card">
-              {customers.length === 0 ? (
-                <div className="empty-state">
-                  <Users size={36} />
-                  <p>Customer directory empty.</p>
-                </div>
-              ) : (
-                <div className="table-container">
-                  <table className="table-glass">
-                    <thead>
-                      <tr>
-                        <th>Registry ID</th>
-                        <th>Full Name</th>
-                        <th>Email Registry</th>
-                        <th>Phone Link</th>
-                        <th className="text-right">Operations</th>
-                      </tr>
-                    </thead>
+            <div className="glass-panel">
+              {customers.length === 0 ? <div className="empty-well"><Users size={40} /><p>Directory empty</p></div> : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="nx-table">
+                    <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Phone</th><th style={{ textAlign: 'right' }}>Actions</th></tr></thead>
                     <tbody>
                       {customers.map(c => (
                         <tr key={c.id}>
-                          <td className="mono-cell">#CUST-{String(c.id).padStart(3, '0')}</td>
-                          <td style={{ fontWeight: '600' }}>{c.name}</td>
-                          <td className="mono-cell">{c.email}</td>
-                          <td className="mono-cell">{c.phone}</td>
-                          <td className="text-right">
-                            <button className="btn btn-danger-outline btn-sm" onClick={() => handleDeleteCustomer(c.id)}>
-                              <Trash2 size={12} /> Erase
-                            </button>
-                          </td>
+                          <td className="mono cyan">#C-{String(c.id).padStart(3, '0')}</td>
+                          <td style={{ fontWeight: 600 }}>{c.name}</td>
+                          <td className="mono" style={{ fontSize: '0.8rem' }}>{c.email}</td>
+                          <td className="mono">{c.phone}</td>
+                          <td style={{ textAlign: 'right' }}><button className="nx-btn nx-btn-danger nx-btn-sm" onClick={() => delCustomer(c.id)}><Trash2 size={12} /></button></td>
                         </tr>
                       ))}
                     </tbody>
@@ -801,53 +382,29 @@ function App() {
           </div>
         )}
 
-        {currentTab === 'orders' && (
-          <div>
-            <div className="page-header">
-              <div className="page-title">
-                <h1>Ledger Transactions</h1>
-                <p>Audit checkout ledgers, verify pricing totals, and manage rollbacks.</p>
-              </div>
-              <button className="btn btn-primary" onClick={() => setOrderModalOpen(true)}>
-                <Plus size={12} /> Create Order
-              </button>
+        {tab === 'orders' && (
+          <div className="page-enter" key="ord">
+            <div className="sec-header">
+              <div><h1>Transaction Ledger</h1><p>Audit checkout transactions and manage rollbacks</p></div>
+              <button className="nx-btn nx-btn-primary" onClick={() => setOrdModal(true)}><Zap size={12} />New Order</button>
             </div>
-
-            <div className="glass-card">
-              {orders.length === 0 ? (
-                <div className="empty-state">
-                  <ShoppingBag size={36} />
-                  <p>No active ledger transactions registered.</p>
-                </div>
-              ) : (
-                <div className="table-container">
-                  <table className="table-glass">
-                    <thead>
-                      <tr>
-                        <th>Receipt ID</th>
-                        <th>Client Reference</th>
-                        <th>Total Settled</th>
-                        <th>Items Count</th>
-                        <th>Settled Time</th>
-                        <th className="text-right">Operations</th>
-                      </tr>
-                    </thead>
+            <div className="glass-panel">
+              {orders.length === 0 ? <div className="empty-well"><ShoppingBag size={40} /><p>No transactions</p></div> : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="nx-table">
+                    <thead><tr><th>Receipt</th><th>Client</th><th>Total</th><th>Items</th><th>Date</th><th style={{ textAlign: 'right' }}>Actions</th></tr></thead>
                     <tbody>
                       {orders.map(o => (
                         <tr key={o.id}>
-                          <td className="mono-cell">#TXN-{String(o.id).padStart(4, '0')}</td>
-                          <td style={{ fontWeight: '600' }}>{o.customer?.name}</td>
-                          <td className="mono-cell">${parseFloat(o.total_amount).toFixed(2)}</td>
-                          <td className="mono-cell">{o.items?.length || 0} categories</td>
+                          <td className="mono cyan">#TXN-{String(o.id).padStart(4, '0')}</td>
+                          <td style={{ fontWeight: 600 }}>{o.customer?.name}</td>
+                          <td className="mono green">${parseFloat(o.total_amount).toFixed(2)}</td>
+                          <td className="mono">{o.items?.length}</td>
                           <td>{new Date(o.created_at).toLocaleString()}</td>
-                          <td className="text-right">
-                            <div style={{ display: 'inline-flex', gap: '0.5rem' }}>
-                              <button className="btn btn-secondary btn-sm" onClick={() => setSelectedOrder(o)}>
-                                <Eye size={12} /> Audit
-                              </button>
-                              <button className="btn btn-danger-outline btn-sm" onClick={() => handleDeleteOrder(o.id)}>
-                                <Trash size={12} /> Rollback
-                              </button>
+                          <td style={{ textAlign: 'right' }}>
+                            <div style={{ display: 'inline-flex', gap: '0.35rem' }}>
+                              <button className="nx-btn nx-btn-ghost nx-btn-sm" onClick={() => setViewOrder(o)}><Eye size={12} /></button>
+                              <button className="nx-btn nx-btn-danger nx-btn-sm" onClick={() => delOrder(o.id)}><Trash size={12} /></button>
                             </div>
                           </td>
                         </tr>
@@ -861,339 +418,134 @@ function App() {
         )}
       </main>
 
-      {/* --- COLLAPSIBLE DEVELOPER COMMAND SHELL CONSOLE --- */}
-      <section className={`terminal-drawer ${isTerminalExpanded ? 'expanded' : 'collapsed'}`}>
-        <div className="terminal-header" onClick={() => setIsTerminalExpanded(!isTerminalExpanded)}>
-          <div className="terminal-title">
-            <Terminal size={14} />
-            <span>STOCKFLOW COMMAND-LINE INTERFACE SHELL</span>
-          </div>
-          <div className="terminal-header-actions">
-            <span>[SESSION: DEV]</span>
-            <span>{isTerminalExpanded ? 'CLICK TO SHRINK [-]' : 'CLICK TO EXPAND [+]'}</span>
-          </div>
+      {/* ── CLI TERMINAL ── */}
+      <section className={`cli-bar ${cliOpen ? 'open' : 'shut'}`}>
+        <div className="cli-head" onClick={() => setCliOpen(!cliOpen)}>
+          <div className="cli-title"><Terminal size={13} />DEVELOPER SHELL</div>
+          <div className="cli-meta">{cliOpen ? '[-] COLLAPSE' : '[+] EXPAND'}</div>
         </div>
-        {isTerminalExpanded && (
-          <div className="terminal-body">
-            {terminalLogs.map((log, index) => (
-              <div key={index} className={`terminal-log-row ${log.type}`}>
-                {log.text}
-              </div>
-            ))}
-            <div ref={terminalEndRef} />
-            
-            <form onSubmit={handleTerminalSubmit} className="terminal-input-line">
-              <span className="terminal-prompt">developer@stockflow:~$</span>
-              <input 
-                type="text" 
-                className="terminal-input"
-                value={terminalInput}
-                onChange={e => setTerminalInput(e.target.value)}
-                placeholder="Enter shell command (e.g. 'help', 'products', 'sys-info')..."
-                autoFocus
-              />
+        {cliOpen && (
+          <div className="cli-body">
+            {cliLog.map((l, i) => <div key={i} className={`cli-row ${l.t}`}>{l.v}</div>)}
+            <div ref={cliEnd} />
+            <form onSubmit={runCli} className="cli-prompt-row">
+              <span className="cli-ps1">nexus $</span>
+              <input className="cli-input" value={cliIn} onChange={e => setCliIn(e.target.value)} placeholder="Enter command..." autoFocus />
             </form>
           </div>
         )}
       </section>
 
-      {/* --- FORM DIALOG MODALS --- */}
-
-      {/* Product Register Dialog */}
-      {productModalOpen && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-header">
-              <h3>{editingProduct ? 'Edit Product Register' : 'Register Product Record'}</h3>
-              <button className="btn-close" onClick={() => setProductModalOpen(false)}><X size={18} /></button>
+      {/* ── MODALS ── */}
+      {prodModal && (
+        <div className="overlay"><div className="dialog">
+          <div className="dialog-head"><h3>{editProd ? 'Edit Product' : 'Add Product'}</h3><button className="btn-close" onClick={() => setProdModal(false)}><X size={18} /></button></div>
+          <form onSubmit={submitProduct}>
+            <div className="dialog-body">
+              <div className="field"><label>Product Name</label><input value={pf.name} onChange={e => setPf({ ...pf, name: e.target.value })} required /></div>
+              <div className="field"><label>SKU Code</label><input value={pf.sku} onChange={e => setPf({ ...pf, sku: e.target.value })} required /></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="field"><label>Price ($)</label><input type="number" step="0.01" value={pf.price} onChange={e => setPf({ ...pf, price: +e.target.value || 0 })} required /></div>
+                <div className="field"><label>Quantity</label><input type="number" value={pf.quantity} onChange={e => setPf({ ...pf, quantity: +e.target.value || 0 })} required /></div>
+              </div>
             </div>
-            <form onSubmit={handleProductSubmit}>
-              <div className="modal-body" style={{ padding: '1.5rem' }}>
-                <div className="form-group" style={{ marginBottom: '1rem' }}>
-                  <label>Product Label</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    value={productForm.name} 
-                    onChange={e => setProductForm({...productForm, name: e.target.value})} 
-                    required 
-                  />
-                </div>
-                <div className="form-group" style={{ marginBottom: '1rem' }}>
-                  <label>Database SKU / Product Key</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    value={productForm.sku} 
-                    onChange={e => setProductForm({...productForm, sku: e.target.value})} 
-                    required 
-                  />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                  <div className="form-group" style={{ marginBottom: '1rem' }}>
-                    <label>Catalog Price ($)</label>
-                    <input 
-                      type="number" 
-                      step="0.01" 
-                      className="form-control" 
-                      value={productForm.price} 
-                      onChange={e => setProductForm({...productForm, price: parseFloat(e.target.value) || 0})} 
-                      required 
-                    />
-                  </div>
-                  <div className="form-group" style={{ marginBottom: '1rem' }}>
-                    <label>Initial Stock Volume</label>
-                    <input 
-                      type="number" 
-                      className="form-control" 
-                      value={productForm.quantity} 
-                      onChange={e => setProductForm({...productForm, quantity: parseInt(e.target.value) || 0})} 
-                      required 
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="modal-footer" style={{ padding: '1rem 1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', justify: 'end', gap: '0.5rem' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setProductModalOpen(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">{editingProduct ? 'Commit Changes' : 'Write Record'}</button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="dialog-foot"><button type="button" className="nx-btn nx-btn-ghost" onClick={() => setProdModal(false)}>Cancel</button><button type="submit" className="nx-btn nx-btn-primary">{editProd ? 'Save' : 'Create'}</button></div>
+          </form>
+        </div></div>
       )}
 
-      {/* Customer Registry Dialog */}
-      {customerModalOpen && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-header">
-              <h3>Register Client Identity</h3>
-              <button className="btn-close" onClick={() => setCustomerModalOpen(false)}><X size={18} /></button>
+      {custModal && (
+        <div className="overlay"><div className="dialog">
+          <div className="dialog-head"><h3>Register Customer</h3><button className="btn-close" onClick={() => setCustModal(false)}><X size={18} /></button></div>
+          <form onSubmit={submitCustomer}>
+            <div className="dialog-body">
+              <div className="field"><label>Full Name</label><input value={cf.name} onChange={e => setCf({ ...cf, name: e.target.value })} required /></div>
+              <div className="field"><label>Email</label><input type="email" value={cf.email} onChange={e => setCf({ ...cf, email: e.target.value })} required /></div>
+              <div className="field"><label>Phone</label><input value={cf.phone} onChange={e => setCf({ ...cf, phone: e.target.value })} required /></div>
             </div>
-            <form onSubmit={handleCustomerSubmit}>
-              <div className="modal-body" style={{ padding: '1.5rem' }}>
-                <div className="form-group" style={{ marginBottom: '1rem' }}>
-                  <label>Legal Full Name</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    value={customerForm.name} 
-                    onChange={e => setCustomerForm({...customerForm, name: e.target.value})} 
-                    required 
-                  />
-                </div>
-                <div className="form-group" style={{ marginBottom: '1rem' }}>
-                  <label>Secure Email Address</label>
-                  <input 
-                    type="email" 
-                    className="form-control" 
-                    value={customerForm.email} 
-                    onChange={e => setCustomerForm({...customerForm, email: e.target.value})} 
-                    required 
-                  />
-                </div>
-                <div className="form-group" style={{ marginBottom: '1rem' }}>
-                  <label>Phone Connection Link</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    value={customerForm.phone} 
-                    onChange={e => setCustomerForm({...customerForm, phone: e.target.value})} 
-                    required 
-                  />
-                </div>
-              </div>
-              <div className="modal-footer" style={{ padding: '1rem 1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', justify: 'end', gap: '0.5rem' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setCustomerModalOpen(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">Commit Registry</button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="dialog-foot"><button type="button" className="nx-btn nx-btn-ghost" onClick={() => setCustModal(false)}>Cancel</button><button type="submit" className="nx-btn nx-btn-primary">Register</button></div>
+          </form>
+        </div></div>
       )}
 
-      {/* Checkout Transaction Order Dialog */}
-      {orderModalOpen && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '650px' }}>
-            <div className="modal-header">
-              <h3>Initiate Checkout Ledger</h3>
-              <button className="btn-close" onClick={() => setOrderModalOpen(false)}><X size={18} /></button>
+      {ordModal && (
+        <div className="overlay"><div className="dialog" style={{ maxWidth: 640 }}>
+          <div className="dialog-head"><h3>Create Order</h3><button className="btn-close" onClick={() => setOrdModal(false)}><X size={18} /></button></div>
+          <form onSubmit={submitOrder}>
+            <div className="dialog-body">
+              <div className="field"><label>Customer</label>
+                <select value={of.customer_id} onChange={e => setOf({ ...of, customer_id: e.target.value })} required>
+                  <option value="">-- Select --</option>
+                  {customers.map(c => <option key={c.id} value={c.id}>{c.name} ({c.email})</option>)}
+                </select>
+              </div>
+              <div className="field"><label>Line Items</label>
+                <div className="order-builder">
+                  {of.items.map((it, i) => (
+                    <div key={i} className="order-line">
+                      <select value={it.product_id} onChange={e => { const n = [...of.items]; n[i].product_id = e.target.value; setOf({ ...of, items: n }); }} required>
+                        <option value="">-- Product --</option>
+                        {products.map(p => <option key={p.id} value={p.id} disabled={p.quantity <= 0}>{p.name} (${parseFloat(p.price).toFixed(2)}) [{p.quantity}]</option>)}
+                      </select>
+                      <input type="number" min="1" value={it.quantity} onChange={e => { const n = [...of.items]; n[i].quantity = +e.target.value || 1; setOf({ ...of, items: n }); }} required />
+                      <button type="button" className="nx-btn nx-btn-danger nx-btn-sm" onClick={() => of.items.length > 1 && setOf({ ...of, items: of.items.filter((_, j) => j !== i) })} disabled={of.items.length === 1}><X size={12} /></button>
+                    </div>
+                  ))}
+                  <button type="button" className="nx-btn nx-btn-ghost nx-btn-sm" onClick={() => setOf({ ...of, items: [...of.items, { product_id: '', quantity: 1 }] })} style={{ marginTop: '0.4rem' }}><Plus size={10} />Add Item</button>
+                </div>
+              </div>
+              <div className="order-total-bar"><span style={{ fontWeight: 600, fontSize: '0.8rem' }}>ESTIMATED TOTAL</span><span style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--accent-1)' }}>${liveTotal.toFixed(2)}</span></div>
             </div>
-            <form onSubmit={handleOrderSubmit}>
-              <div className="modal-body" style={{ padding: '1.5rem' }}>
-                <div className="form-group" style={{ marginBottom: '1.25rem' }}>
-                  <label>Client Reference Link</label>
-                  <select 
-                    className="form-control"
-                    value={orderForm.customer_id}
-                    onChange={e => setOrderForm({...orderForm, customer_id: e.target.value})}
-                    required
-                  >
-                    <option value="">-- Associate Customer Registry --</option>
-                    {customers.map(c => (
-                      <option key={c.id} value={c.id}>{c.name} ({c.email})</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label style={{ display: 'flex', justifyContent: 'between', alignItems: 'center' }}>
-                    <span>Associate Line Items</span>
-                  </label>
-                  
-                  <div className="order-items-builder">
-                    {orderForm.items.map((item, index) => {
-                      const selectedProd = products.find(p => p.id === parseInt(item.product_id));
-                      return (
-                        <div key={index} className="order-item-row" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: '0.75rem', marginBottom: '0.75rem', alignItems: 'center' }}>
-                          <div>
-                            <select 
-                              className="form-control"
-                              value={item.product_id}
-                              onChange={e => handleOrderItemChange(index, 'product_id', e.target.value)}
-                              required
-                            >
-                              <option value="">-- Choose Product --</option>
-                              {products.map(p => (
-                                <option key={p.id} value={p.id} disabled={p.quantity <= 0}>
-                                  {p.name} (${parseFloat(p.price).toFixed(2)}) [Vol: {p.quantity}]
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <input 
-                              type="number"
-                              className="form-control"
-                              min="1"
-                              max={selectedProd ? selectedProd.quantity : undefined}
-                              value={item.quantity}
-                              placeholder="Qty"
-                              onChange={e => handleOrderItemChange(index, 'quantity', parseInt(e.target.value) || 1)}
-                              required
-                            />
-                          </div>
-                          <div>
-                            <button 
-                              type="button" 
-                              className="btn btn-danger-outline btn-sm"
-                              onClick={() => handleRemoveOrderItem(index)}
-                              disabled={orderForm.items.length === 1}
-                            >
-                              <X size={12} />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={handleAddOrderItem} style={{ marginTop: '0.5rem' }}>
-                      <Plus size={10} /> Add Item Line
-                    </button>
-                  </div>
-                </div>
-
-                {/* Real-time Order Summary */}
-                <div style={{ padding: '1rem', background: 'rgba(0, 242, 254, 0.04)', borderRadius: '4px', border: '1px solid rgba(0, 242, 254, 0.15)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: '600', fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>ESTIMATED TOTAL:</span>
-                  <span style={{ fontSize: '1.25rem', fontFamily: 'var(--font-mono)', fontWeight: '700', color: 'var(--color-cyan)' }}>
-                    ${getLiveOrderTotal().toFixed(2)}
-                  </span>
-                </div>
-              </div>
-              <div className="modal-footer" style={{ padding: '1rem 1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', justify: 'end', gap: '0.5rem' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setOrderModalOpen(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">Commit Checkout</button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="dialog-foot"><button type="button" className="nx-btn nx-btn-ghost" onClick={() => setOrdModal(false)}>Cancel</button><button type="submit" className="nx-btn nx-btn-primary">Commit</button></div>
+          </form>
+        </div></div>
       )}
 
-      {/* Transaction Details/Audit modal */}
-      {selectedOrder && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '600px' }}>
-            <div className="modal-header">
-              <h3>Auditing Receipt ID #TXN-{String(selectedOrder.id).padStart(4, '0')}</h3>
-              <button className="btn-close" onClick={() => setSelectedOrder(null)}><X size={18} /></button>
-            </div>
-            <div className="modal-body" style={{ padding: '1.5rem' }}>
-              
-              <div style={{ marginBottom: '1.5rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-                <div>
-                  <div style={{ fontSize: '0.65rem', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Client Credentials</div>
-                  <div style={{ fontWeight: '600', fontSize: '1.05rem', marginTop: '0.25rem' }}>{selectedOrder.customer?.name}</div>
-                  <div style={{ fontSize: '0.85rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{selectedOrder.customer?.email}</div>
-                  <div style={{ fontSize: '0.85rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{selectedOrder.customer?.phone}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '0.65rem', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Logistics Telemetry</div>
-                  <div style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>State:</span> <span className="badge badge-success">Committed</span>
-                  </div>
-                  <div style={{ fontSize: '0.85rem', fontFamily: 'var(--font-mono)' }}>
-                    <span style={{ color: 'var(--text-muted)' }}>UTC-stamp:</span> {new Date(selectedOrder.created_at).toLocaleString()}
-                  </div>
-                </div>
+      {viewOrder && (
+        <div className="overlay"><div className="dialog" style={{ maxWidth: 600 }}>
+          <div className="dialog-head"><h3>Receipt #TXN-{String(viewOrder.id).padStart(4, '0')}</h3><button className="btn-close" onClick={() => setViewOrder(null)}><X size={18} /></button></div>
+          <div className="dialog-body">
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '1.5rem' }}>
+              <div>
+                <div className="m-card-label">Client</div>
+                <div style={{ fontWeight: 600, marginTop: '0.2rem' }}>{viewOrder.customer?.name}</div>
+                <div className="mono" style={{ fontSize: '0.8rem', color: 'var(--text-3)' }}>{viewOrder.customer?.email}</div>
               </div>
-
-              {/* Items List */}
-              <div style={{ fontSize: '0.65rem', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Receipt Line Items</div>
-              <div style={{ border: '1px solid var(--border-color)', borderRadius: '4px', overflow: 'hidden' }}>
-                <table className="table-glass" style={{ margin: 0 }}>
-                  <thead>
-                    <tr>
-                      <th>Label</th>
-                      <th>SKU</th>
-                      <th>Price</th>
-                      <th>Qty</th>
-                      <th className="text-right">Subtotal</th>
+              <div>
+                <div className="m-card-label">Meta</div>
+                <div style={{ marginTop: '0.2rem' }}><span className="tag tag-ok">Committed</span></div>
+                <div className="mono" style={{ fontSize: '0.78rem', color: 'var(--text-3)', marginTop: '0.2rem' }}>{new Date(viewOrder.created_at).toLocaleString()}</div>
+              </div>
+            </div>
+            <div style={{ border: '1px solid var(--border)', borderRadius: '6px', overflow: 'hidden' }}>
+              <table className="nx-table" style={{ margin: 0 }}>
+                <thead><tr><th>Item</th><th>SKU</th><th>Price</th><th>Qty</th><th style={{ textAlign: 'right' }}>Subtotal</th></tr></thead>
+                <tbody>
+                  {viewOrder.items?.map(it => (
+                    <tr key={it.id}>
+                      <td style={{ fontWeight: 600 }}>{it.product?.name}</td>
+                      <td><span className="tag tag-info">{it.product?.sku}</span></td>
+                      <td className="mono">${parseFloat(it.price_at_order).toFixed(2)}</td>
+                      <td className="mono">{it.quantity}</td>
+                      <td className="mono" style={{ textAlign: 'right' }}>${(parseFloat(it.price_at_order) * it.quantity).toFixed(2)}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {selectedOrder.items?.map(item => (
-                      <tr key={item.id}>
-                        <td style={{ fontWeight: '600' }}>{item.product?.name}</td>
-                        <td className="mono-cell">{item.product?.sku}</td>
-                        <td className="mono-cell">${parseFloat(item.price_at_order).toFixed(2)}</td>
-                        <td className="mono-cell">{item.quantity}</td>
-                        <td className="text-right mono-cell">${(parseFloat(item.price_at_order) * item.quantity).toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Grand Total */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '0.65rem', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Settled Total</div>
-                  <div style={{ fontSize: '1.8rem', fontFamily: 'var(--font-mono)', fontWeight: '700', color: 'var(--color-cyan)', marginTop: '0.25rem' }}>
-                    ${parseFloat(selectedOrder.total_amount).toFixed(2)}
-                  </div>
-                </div>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div className="modal-footer" style={{ padding: '1rem 1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', justify: 'end' }}>
-              <button className="btn btn-secondary" onClick={() => setSelectedOrder(null)}>Dismiss Audit</button>
+            <div style={{ textAlign: 'right', marginTop: '1.25rem' }}>
+              <div className="m-card-label">Grand Total</div>
+              <div className="mono cyan" style={{ fontSize: '1.8rem', fontWeight: 700 }}>${parseFloat(viewOrder.total_amount).toFixed(2)}</div>
             </div>
           </div>
-        </div>
+          <div className="dialog-foot"><button className="nx-btn nx-btn-ghost" onClick={() => setViewOrder(null)}>Close</button></div>
+        </div></div>
       )}
 
-      {/* Toasts Container */}
-      <div className="toast-container">
-        {toasts.map(t => (
-          <div key={t.id} className={`toast toast-${t.type}`}>
-            <span>{t.message}</span>
-          </div>
-        ))}
+      {/* Toasts */}
+      <div className="toast-stack">
+        {toasts.map(t => <div key={t.id} className={`toast-msg ${t.ok ? 'toast-ok' : 'toast-err'}`}>{t.m}</div>)}
       </div>
-
     </div>
   );
 }
-
-export default App;
