@@ -1,5 +1,9 @@
 # StockFlow - Inventory & Order Management System
 
+**Live Web App**: [https://frontend-opal-ten-28.vercel.app](https://frontend-opal-ten-28.vercel.app)  
+**Live API Docs (Swagger)**: [https://backend-six-ruddy-26.vercel.app/docs](https://backend-six-ruddy-26.vercel.app/docs)  
+**Docker Image (GHCR)**: `ghcr.io/venkateswar8703/stockflow-backend:latest`
+
 StockFlow is a production-ready, full-stack, fully containerized Inventory & Order Management System. It allows businesses to register and manage products, customers, and order placement with automatic inventory stock deductions, transactional guarantees, and live dashboard statistics.
 
 ## Tech Stack
