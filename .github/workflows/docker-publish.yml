@@ -40,7 +40,7 @@ jobs:
         run: |
           TAGS="ghcr.io/venkateswar8703/stockflow-backend:latest"
           if [ "$DOCKER_USERNAME" != "" ]; then
-            TAGS="$TAGS,$DOCKER_USERNAME/stockflow-backend:latest"
+            TAGS="$TAGS,$DOCKER_USERNAME/production-readycontainerized-inventory-order-management-system:latest"
           fi
           echo "tags=$TAGS" >> $GITHUB_OUTPUT
         shell: bash
