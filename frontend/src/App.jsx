@@ -221,42 +221,33 @@ export default function App() {
 
   return (
     <div className="nexus-app">
-      <div className="grid-bg" />
+      <div className="dot-field" />
 
-      {/* ── LEFT SIDEBAR NAVIGATION ── */}
-      <aside className="sidebar">
-        <div className="brand-section">
-          <div className="brand-logo-cube"><Layers size={16} /></div>
-          <span className="brand-name">STOCKFLOW</span>
-        </div>
+      {/* ── FLOATING TOP HEADER ── */}
+      <header className="top-bar">
+        <div className="brand-glitch"><Layers size={18} /> STOCKFLOW</div>
+        <ul className="nav-tabs">
+          {[['dashboard', Activity, 'Overview'], ['products', Package, 'Products'], ['customers', Users, 'Directory'], ['orders', ShoppingBag, 'Ledger']].map(([k, Icon, label]) => (
+            <li key={k} className={`nav-tab ${tab === k ? 'active' : ''}`}>
+              <button onClick={() => setTab(k)}>
+                <Icon size={15} />
+                <span>{label}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div className="live-indicator"><div className="pulse-ring" /><span>LIVE</span></div>
+      </header>
 
-        <nav style={{ flex: 1 }}>
-          <ul className="nav-menu">
-            {[['dashboard', Activity, 'Overview'], ['products', Package, 'Products Catalog'], ['customers', Users, 'Directory Registry'], ['orders', ShoppingBag, 'Ledger Transactions']].map(([k, Icon, label]) => (
-              <li key={k} className={`nav-item ${tab === k ? 'active' : ''}`}>
-                <button onClick={() => setTab(k)}>
-                  <Icon size={18} />
-                  <span>{label}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </nav>
-
-        <div className="sidebar-footer">
-          <div className="live-indicator"><div className="pulse-ring" /><span>LIVE TELEMETRY</span></div>
-        </div>
-      </aside>
-
-      {/* ── MAIN WORKSPACE PANEL ── */}
-      <main className="main-panel">
+      {/* ── MAIN WORKSPACE CONTENT ── */}
+      <main className="nexus-content">
 
         {tab === 'dashboard' && (
           <div className="page-enter" key="dash">
             <div className="sec-header">
-              <div><h1>Dashboard Summary</h1><p>Real-time system health parameters & transaction records</p></div>
+              <div><h1>System Status Overview</h1><p>Real-time telemetry and database transaction records</p></div>
               <div style={{ display: 'flex', gap: '0.75rem' }}>
-                <button className="nx-btn nx-btn-ghost nx-btn-sm" onClick={fetchAll}><RefreshCw size={14} /> Sync</button>
+                <button className="nx-btn nx-btn-ghost nx-btn-sm" onClick={fetchAll}><RefreshCw size={14} /> Refresh</button>
                 <button className="nx-btn nx-btn-primary nx-btn-sm" onClick={() => setOrdModal(true)}><Zap size={14} /> New Order</button>
               </div>
             </div>
@@ -423,7 +414,7 @@ export default function App() {
         )}
       </main>
 
-      {/* ── FLOATING DEV CONSOLE ── */}
+      {/* ── FLOATING DEV WIDGET CONSOLE ── */}
       <section className={`cli-bar ${cliOpen ? 'open' : 'shut'}`}>
         <div className="cli-head" onClick={() => setCliOpen(!cliOpen)}>
           <div className="cli-title"><Terminal size={14} /> DEVELOPER CONSOLE</div>
