@@ -478,31 +478,29 @@ body {
 .tele-msg { color: var(--text-2); }
 .tele-lat { color: var(--accent-3); margin-left: auto; font-weight: 700; }
 
-/* FLOATING DEV CONSOLE TERMINAL */
+/* DOCKED BOTTOM FULL-WIDTH DEV TERMINAL */
 .cli-bar {
   position: fixed;
-  bottom: 2rem; right: 2rem;
-  width: 440px;
+  bottom: 0; left: 0; right: 0;
+  width: 100%;
   background: #1c1917; /* Deep Stone/Charcoal */
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
+  border-top: 2px solid var(--accent-1);
   z-index: 500;
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.1);
   overflow: hidden;
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: height 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.cli-bar.shut { height: 44px; width: 200px; border-radius: 8px; }
-.cli-bar.open { height: 320px; border-radius: 12px; }
+.cli-bar.shut { height: 38px; }
+.cli-bar.open { height: 260px; }
 
 .cli-head {
-  height: 44px;
-  padding: 0 1.5rem;
+  height: 38px;
+  padding: 0 2rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   cursor: pointer;
   background: rgba(255,255,255,0.02);
-  border-bottom: 1px solid rgba(255,255,255,0.05);
 }
 .cli-title {
   font-family: var(--font-mono);
@@ -521,14 +519,14 @@ body {
 }
 
 .cli-body {
-  padding: 1rem 1.5rem;
+  padding: 0.75rem 2rem;
   overflow-y: auto;
   font-family: var(--font-mono);
   font-size: 0.8rem;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  height: calc(100% - 44px);
+  height: calc(100% - 38px);
   background: rgba(0,0,0,0.15);
 }
 .cli-row { white-space: pre-wrap; word-break: break-all; line-height: 1.5; }
@@ -552,6 +550,7 @@ body {
   color: #ffffff;
   font-family: var(--font-mono);
   font-size: 0.8rem;
+  caret-color: var(--accent-1);
 }
 
 /* MODALS */
