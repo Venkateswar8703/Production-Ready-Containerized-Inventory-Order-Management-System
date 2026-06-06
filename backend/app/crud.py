@@ -130,7 +130,7 @@ def create_order(db: Session, order_create: schemas.OrderCreate):
         for item in order_create.items:
             # Fetch product (with row-level locking to prevent race conditions in high concurrency)
             # using with_for_update() ensures that other transactions can't modify the stock simultaneously
-            product = db.query(models.Product).filter(models.Product.id == item.product_id).with_for_update().first()
+            product = db.query(models.Product).filter(models.Product.id == item.product_id).first()
             if not product:
                 raise ValueError(f"Product with ID {item.product_id} does not exist")
                 
@@ -176,7 +176,7 @@ def delete_order(db: Session, order_id: int):
     try:
         # Restore stock back to the inventory
         for item in db_order.items:
-            product = db.query(models.Product).filter(models.Product.id == item.product_id).with_for_update().first()
+            product = db.query(models.Product).filter(models.Product.id == item.product_id).first()
             if product:
                 product.quantity += item.quantity
                 
