@@ -48,6 +48,7 @@ export default function App() {
     { t: 'sys', v: 'Command engine ready. Type "help" for a list of directives.' }
   ]);
   const cliEnd = useRef(null);
+  const cliInputRef = useRef(null);
 
   const cP = useCountUp(summary.total_products);
   const cC = useCountUp(summary.total_customers);
@@ -56,6 +57,13 @@ export default function App() {
 
   useEffect(() => { fetchAll(); }, []);
   useEffect(() => { cliEnd.current?.scrollIntoView({ behavior: 'smooth' }); }, [cliLog]);
+  useEffect(() => {
+    if (cliOpen) {
+      setTimeout(() => {
+        cliInputRef.current?.focus();
+      }, 300);
+    }
+  }, [cliOpen]);
 
   const toast = (m, ok = true) => {
     const id = Date.now();
@@ -236,7 +244,13 @@ export default function App() {
             </li>
           ))}
         </ul>
-        <div className="live-indicator"><div className="pulse-ring" /><span>LIVE</span></div>
+        <div className="header-actions">
+          <div className="live-indicator"><div className="pulse-ring" /><span>LIVE</span></div>
+          <button className={`nx-btn nx-btn-ghost nx-btn-sm dev-console-toggle ${cliOpen ? 'active' : ''}`} onClick={() => setCliOpen(!cliOpen)}>
+            <Terminal size={14} />
+            <span>Console</span>
+          </button>
+        </div>
       </header>
 
       {/* ── MAIN WORKSPACE CONTENT ── */}
@@ -415,21 +429,28 @@ export default function App() {
       </main>
 
       {/* ── FLOATING DEV WIDGET CONSOLE ── */}
+      {cliOpen && <div className="cli-overlay" onClick={() => setCliOpen(false)} />}
       <section className={`cli-bar ${cliOpen ? 'open' : 'shut'}`}>
-        <div className="cli-head" onClick={() => setCliOpen(!cliOpen)}>
+        <div className="cli-head">
           <div className="cli-title"><Terminal size={14} /> DEVELOPER CONSOLE</div>
-          <div className="cli-meta">{cliOpen ? '[COLLAPSE]' : '[EXPAND]'}</div>
+          <button className="cli-close-btn" onClick={() => setCliOpen(false)} title="Close Console">
+            <X size={16} />
+          </button>
         </div>
-        {cliOpen && (
-          <div className="cli-body">
-            {cliLog.map((l, i) => <div key={i} className={`cli-row ${l.t}`}>{l.v}</div>)}
-            <div ref={cliEnd} />
-            <form onSubmit={runCli} className="cli-prompt-row">
-              <span className="cli-ps1">nexus $</span>
-              <input className="cli-input" value={cliIn} onChange={e => setCliIn(e.target.value)} placeholder="Type help..." autoFocus />
-            </form>
-          </div>
-        )}
+        <div className="cli-body">
+          {cliLog.map((l, i) => <div key={i} className={`cli-row ${l.t}`}>{l.v}</div>)}
+          <div ref={cliEnd} />
+          <form onSubmit={runCli} className="cli-prompt-row">
+            <span className="cli-ps1">nexus $</span>
+            <input
+              ref={cliInputRef}
+              className="cli-input"
+              value={cliIn}
+              onChange={e => setCliIn(e.target.value)}
+              placeholder="Type help..."
+            />
+          </form>
+        </div>
       </section>
 
       {/* ── DIALOG OVERLAYS ── */}
