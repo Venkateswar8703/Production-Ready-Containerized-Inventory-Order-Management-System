@@ -23,7 +23,13 @@ function useCountUp(target, duration = 600) {
 }
 
 export default function App() {
-  const [tab, setTab] = useState('dashboard');
+  const getInitialTab = () => {
+    const p = window.location.pathname.replace(/^\/|\/$/g, '').toLowerCase();
+    if (['products', 'customers', 'orders'].includes(p)) return p;
+    return 'dashboard';
+  };
+
+  const [tab, setTab] = useState(getInitialTab);
   const [products, setProducts] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -57,6 +63,19 @@ export default function App() {
 
   useEffect(() => { fetchAll(); }, []);
   useEffect(() => { cliEnd.current?.scrollIntoView({ behavior: 'smooth' }); }, [cliLog]);
+  useEffect(() => {
+    const handlePopState = () => {
+      setTab(getInitialTab());
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const handleTabChange = (newTab) => {
+    setTab(newTab);
+    const path = newTab === 'dashboard' ? '/' : `/${newTab}`;
+    window.history.pushState(null, '', path);
+  };
   useEffect(() => {
     if (cliOpen) {
       setTimeout(() => {
@@ -237,7 +256,7 @@ export default function App() {
         <ul className="nav-tabs">
           {[['dashboard', Activity, 'Overview'], ['products', Package, 'Products'], ['customers', Users, 'Directory'], ['orders', ShoppingBag, 'Ledger']].map(([k, Icon, label]) => (
             <li key={k} className={`nav-tab ${tab === k ? 'active' : ''}`}>
-              <button onClick={() => setTab(k)}>
+              <button onClick={() => handleTabChange(k)}>
                 <Icon size={15} />
                 <span>{label}</span>
               </button>

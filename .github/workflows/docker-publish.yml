@@ -25,12 +25,29 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Log in to Docker Hub
+        if: ${{ secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != '' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Set up Image Tags
+        id: tags
+        run: |
+          TAGS="ghcr.io/venkateswar8703/stockflow-backend:latest"
+          if [ "${{ secrets.DOCKER_USERNAME }}" != "" ]; then
+            TAGS="$TAGS,${{ secrets.DOCKER_USERNAME }}/stockflow-backend:latest"
+          fi
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+        shell: bash
+
       - name: Build and Push Backend Image
         uses: docker/build-push-action@v5
         with:
           context: ./backend
           file: ./backend/Dockerfile
           push: true
-          tags: ghcr.io/venkateswar8703/stockflow-backend:latest
+          tags: ${{ steps.tags.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
