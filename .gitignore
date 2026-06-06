@@ -1,0 +1,27 @@
+# Virtual Environments
+venv/
+backend/venv/
+.venv/
+env/
+
+# Node packages and builds
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+
+# Local configuration & credentials
+.env
+.env.local
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE configurations
+.vscode/
+.idea/
+*.swp
+*.swo
